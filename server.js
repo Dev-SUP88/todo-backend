@@ -14,8 +14,10 @@ const pool = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
-    database: process.env.DB_NAME
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT // <-- ต้องมีบรรทัดนี้ ไม่งั้นพอร์ต 443 ที่เราตั้งไว้ใน Render จะไม่มีประโยชน์เลย!
 });
+
 
 // 2. Middleware ตรวจสอบความปลอดภัย (JWT Authentication)
 const authenticateToken = (req, res, next) => {
