@@ -3,7 +3,10 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const googleAuth = require('google-auth-library');
 require('dotenv').config();
+
+const client = new googleAuth.OAuth2Client('929898429344-17ufedipqrcsbe0io5t807t32p3usqbr.apps.googleusercontent.com');
 
 const app = express();
 app.use(express.json());
@@ -17,6 +20,7 @@ const pool = mysql.createPool({
     database: process.env.DB_NAME,
     port: process.env.DB_PORT // <-- ต้องมีบรรทัดนี้ ไม่งั้นพอร์ต 443 ที่เราตั้งไว้ใน Render จะไม่มีประโยชน์เลย!
 });
+
 
 
 // 2. Middleware ตรวจสอบความปลอดภัย (JWT Authentication)
@@ -36,6 +40,62 @@ const authenticateToken = (req, res, next) => {
 // ==========================================
 // AUTH ROUTES (Register & Login)
 // ==========================================
+
+app.post('/api/google-login', async (req, res) => {
+    const { token } = req.body; // 1. หน้าบ้านยิง Token ที่ได้จาก Google มาให้ที่นี่
+
+    try {
+        // 2. ส่ง Token ไปให้ Google ตรวจสอบความถูกต้อง
+        const ticket = await client.verifyIdToken({
+            idToken: token,
+            audience: '929898429344-17ufedipqrcsbe0io5t807t32p3usqbr.apps.googleusercontent.com'
+        });
+        const payload = ticket.getPayload(); 
+        const { email, name } = payload; // ดึงอีเมลและชื่อจริงจาก Google
+
+        // 3. เช็คในฐานข้อมูล MySQL ของเราว่าเคยมีอีเมลนี้ไหม
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+
+        let user = users[0];
+
+        if (!user) {
+            // 🌟 เคสที่ 1: ยังไม่มีอีเมลนี้ในระบบ (สมัครสมาชิกใหม่สด ๆ)
+            // ใช้ชื่อจาก Google ตั้งเป็น username ไปก่อน ส่วน password ปล่อยเป็น NULL
+            const [result] = await pool.query(
+                'INSERT INTO users (username, email, password) VALUES (?, ?, NULL)',
+                [name, email]
+            );
+            
+            // ดึงข้อมูลยูสเซอร์ที่เพิ่งสร้างขึ้นมา
+            const [newUser] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
+            user = newUser[0];
+        }
+
+        // 🌟 เคสที่ 2: มีอีเมลนี้อยู่แล้ว (หรือสร้างเสร็จจากเคสด้านบนแล้ว)
+        // 4. สร้าง JWT Token ของแอปเราเอง เพื่อให้หน้าบ้านเอาไว้ใช้ล็อกอินในหน้าถัด ๆ ไป
+        // (ถ้าระบบเดิมนายใช้ Session หรือไม่ได้ใช้ JWT สามารถตัดท่อน sign นี้ออกแล้วส่ง user กลับไปตรง ๆ ได้เลยครับ)
+        const mySystemToken = jwt.sign(
+            { id: user.id, username: user.username, email: user.email },
+            process.env.JWT_SECRET || 'SECRET_KEY_ของนาย',
+            { expiresIn: '1d' }
+        );
+
+        // 5. ส่งข้อมูลกลับไปบอกหน้าบ้านว่า "ผ่านด่านแล้วจ้า!"
+        res.json({
+            message: "Google Login Successful!",
+            token: mySystemToken,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email
+            }
+        });
+
+    } catch (error) {
+        console.error("Google Auth Error:", error);
+        res.status(400).json({ error: "Invalid Google Token" });
+    }
+});
 
 // สมัครสมาชิก (ความปลอดภัย: Hash รหัสผ่านด้วย bcrypt)
 // แก้ไขโค้ดใน server.js ตรงส่วน Register ให้เป็นแบบนี้:
