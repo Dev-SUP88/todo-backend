@@ -86,7 +86,7 @@ app.get("/api/payment-success", async (req, res) => {
   try {
     // 🗄️ ยิง SQL ไปเปลี่ยนสถานะผู้ใช้ในตารางเป็นพรีเมียม!
     // (แก้ชื่อตาราง/ตัวแปรคิวรี่ db ให้ตรงตามโครงสร้างของโปรเจกต์พี่นะครับ)
-    await db.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
+    await pool.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
 
     // พออัปเดตเบสเสร็จ ให้ดีดผู้ใช้กลับไปที่หน้าแรกของหน้าบ้านเราพร้อมส่งตัวแปรบอกว่าสำเร็จ
     // (แก้ URL หน้าบ้านด้านล่างนี้ให้ตรงกับหน้าเว็บพี่นะ)
