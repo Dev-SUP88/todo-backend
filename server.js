@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const stripe = require('stripe')('process.env.STRIPE_KEY');
+const stripe = require('stripe')(process.env.STRIPE_KEY);
 
 const googleAuth = require('google-auth-library');
 require('dotenv').config();
