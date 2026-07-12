@@ -3,10 +3,11 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const stripe = require('stripe')(process.env.STRIPE_KEY);
+require('dotenv').config();
+const Stripe = require('stripe');
+const stripe = new Stripe(process.env.STRIPE_KEY);
 
 const googleAuth = require('google-auth-library');
-require('dotenv').config();
 
 const client = new googleAuth.OAuth2Client('929898429344-17ufedipqrcsbe0io5t807t32p3usqbr.apps.googleusercontent.com');
 
