@@ -35,6 +35,7 @@ const authenticateToken = (req, res, next) => {
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ message: 'Invalid or Expired Token' });
         req.user = user; // ส่งข้อมูล user (id, username) ไปยัง endpoint ถัดไป
+      console.log(req.user);
         next();
     });
 };
