@@ -44,7 +44,7 @@ const authenticateToken = (req, res, next) => {
 app.post("/api/create-checkout-session", async (req, res) => {
   try {
     // แกะ userId จาก token (สมมติว่าพี่มีระบบแกะ req.user.id จาก middleware ล็อกอินอยู่แล้ว)
-    const userId = req.user ? req.user.id : null; 
+    const userId = 6; 
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card", "promptpay"], // 🇹🇭 เปิดรับทั้งบัตรเครดิตและ PromptPay QR ของไทย!
