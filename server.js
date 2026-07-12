@@ -81,7 +81,7 @@ app.get("/api/payment-success", async (req, res) => {
     await pool.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
 
     // 📌 ตรงนี้ต้องเปลี่ยนจาก localhost เป็น URL หน้าบ้านตัวจริงของพี่เวลาอัปขึ้นโฮสต์จริงนะครับ!
-    res.redirect("http://localhost:5173/?payment=success"); 
+    res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=success"); 
   } catch (err) {
     console.error(err);
     res.status(500).send("เกิดข้อผิดพลาดในการอัปเดตสิทธิ์พรีเมียม");
@@ -91,7 +91,7 @@ app.get("/api/payment-success", async (req, res) => {
 // ❌ 3. ด่านรับสายตอนลูกค้ายกเลิกการจ่ายเงิน
 app.get("/api/payment-cancel", (req, res) => {
   // 📌 ตรงนี้ด้วยเช่นกันครับ เปลี่ยนเป็น URL หน้าบ้านตัวจริง
-  res.redirect("http://localhost:5173/?payment=cancel");
+  res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=cancel");
 });
 
 
@@ -246,6 +246,44 @@ app.put('/api/todos/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// 🎨 Route แยกเฉพาะ: สำหรับการอัปเดตเปลี่ยนสี Todo (Premium Only)
+app.put('/api/todos/:id/color', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { color_code } = req.body; // รับค่า color_code แยกมาเดี่ยวๆ
+    const userId = req.user.id;
+
+    // เช็คพื้นฐานก่อนว่าส่งค่าสีมาจริงไหม
+    if (!color_code) {
+        return res.status(400).json({ message: 'กรุณาระบุรหัสสี (color_code)' });
+    }
+
+    try {
+        // 👑 1. ตรวจสอบสิทธิ์ Premium ของผู้ใช้จากฐานข้อมูลจริง
+        const [userCheck] = await pool.query('SELECT is_premium FROM users WHERE id = ?', [userId]);
+        const isPremium = userCheck[0]?.is_premium === 1;
+
+        // ถ้าหลังบ้านบอกไม่ใช่ Premium สั่งบล็อกทันที
+        if (!isPremium) {
+            return res.status(403).json({ message: 'ฟีเจอร์นี้เปิดให้ใช้งานเฉพาะสมาชิก Premium เท่านั้น' });
+        }
+
+        // 🛡️ 2. เช็คว่า Todo รายการนี้เป็นของยูสเซอร์คนนี้จริงไหม
+        const [todoCheck] = await pool.query('SELECT id FROM todos WHERE id = ? AND user_id = ?', [id, userId]);
+        if (todoCheck.length === 0) {
+            return res.status(404).json({ message: 'ไม่พบรายการ Todo หรือคุณไม่มีสิทธิ์ในรายการนี้' });
+        }
+
+        // 📝 3. อัปเดตฟิลด์ color_code ในฐานข้อมูล
+        await pool.query('UPDATE todos SET color_code = ? WHERE id = ? AND user_id = ?', [color_code, id, userId]);
+        
+        res.json({ message: 'เปลี่ยนสีไอเทมเรียบร้อยแล้ว' });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 app.delete('/api/todos/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
