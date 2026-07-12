@@ -81,7 +81,7 @@ app.get("/api/payment-success", async (req, res) => {
     await pool.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
 
     // 📌 ตรงนี้ต้องเปลี่ยนจาก localhost เป็น URL หน้าบ้านตัวจริงของพี่เวลาอัปขึ้นโฮสต์จริงนะครับ!
-    res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=success"); 
+    res.redirect("http://localhost:5173/?payment=success"); 
   } catch (err) {
     console.error(err);
     res.status(500).send("เกิดข้อผิดพลาดในการอัปเดตสิทธิ์พรีเมียม");
@@ -91,7 +91,7 @@ app.get("/api/payment-success", async (req, res) => {
 // ❌ 3. ด่านรับสายตอนลูกค้ายกเลิกการจ่ายเงิน
 app.get("/api/payment-cancel", (req, res) => {
   // 📌 ตรงนี้ด้วยเช่นกันครับ เปลี่ยนเป็น URL หน้าบ้านตัวจริง
-  res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=cancel");
+  res.redirect("http://localhost:5173/?payment=cancel");
 });
 
 
@@ -184,6 +184,20 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// 🔍 API สำหรับเช็คสถานะและข้อมูลผู้ใช้ล่าสุด (ใส่ไว้ต่อจากท่อน Auth หรือก่อน Todo Routes)
+app.get('/api/me', authenticateToken, async (req, res) => {
+    try {
+        // ยิงไปดึงข้อมูลล่าสุดจากฐานข้อมูลจริง เพื่อดูว่าจ่ายตังค์หรือยัง
+        const [rows] = await pool.query('SELECT id, username, email, is_premium FROM users WHERE id = ?', [req.user.id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
+        
+        res.json({ user: rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 // ==========================================
 // TODO ROUTES 
