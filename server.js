@@ -81,7 +81,7 @@ app.get("/api/payment-success", async (req, res) => {
     await pool.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
 
     // 📌 ตรงนี้ต้องเปลี่ยนจาก localhost เป็น URL หน้าบ้านตัวจริงของพี่เวลาอัปขึ้นโฮสต์จริงนะครับ!
-    res.redirect("http://localhost:5173/?payment=success"); 
+    res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=success"); 
   } catch (err) {
     console.error(err);
     res.status(500).send("เกิดข้อผิดพลาดในการอัปเดตสิทธิ์พรีเมียม");
@@ -91,7 +91,7 @@ app.get("/api/payment-success", async (req, res) => {
 // ❌ 3. ด่านรับสายตอนลูกค้ายกเลิกการจ่ายเงิน
 app.get("/api/payment-cancel", (req, res) => {
   // 📌 ตรงนี้ด้วยเช่นกันครับ เปลี่ยนเป็น URL หน้าบ้านตัวจริง
-  res.redirect("http://localhost:5173/?payment=cancel");
+  res.redirect("https://todo-frontend-sigma-coral.vercel.app/?payment=cancel");
 });
 
 
