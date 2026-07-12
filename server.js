@@ -3,6 +3,8 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const stripe = require('stripe')('process.env.STRIPE_KEY');
+
 const googleAuth = require('google-auth-library');
 require('dotenv').config();
 
@@ -36,6 +38,69 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
+
+// 💳 1. API สำหรับสร้างหน้าต่างชำระเงิน Stripe ฿38
+app.post("/api/create-checkout-session", async (req, res) => {
+  try {
+    // แกะ userId จาก token (สมมติว่าพี่มีระบบแกะ req.user.id จาก middleware ล็อกอินอยู่แล้ว)
+    const userId = req.user ? req.user.id : null; 
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card", "promptpay"], // 🇹🇭 เปิดรับทั้งบัตรเครดิตและ PromptPay QR ของไทย!
+      line_items: [
+        {
+          price_data: {
+            currency: "thb", // บังคับสกุลเงินบาท
+            product_data: {
+              name: "Todo List Premium 💎",
+              description: "ปลดล็อกฟีเจอร์ปรับแต่งสีสันรายการ Todo ได้ตามใจชอบตลอดชีพ",
+            },
+            unit_amount: 3800, // ฿38.00 (หน่วยของ Stripe เป็นสตางค์ เลยต้องคูณ 100 ครับ)
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      // หน้าเว็บที่จะให้ Stripe เด้งกลับไปหาหลังจากจ่ายตังค์สำเร็จ/ยกเลิก
+      success_url: `https://todo-backend-sk7n.onrender.com/api/payment-success?userId=${userId}`, 
+      cancel_url: `https://todo-backend-sk7n.onrender.com/api/payment-cancel`,
+    });
+
+    // ส่งลิงก์ชำระเงินกลับไปให้หน้าบ้านเปิด
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).json({ error: "ไม่สามารถสร้างรายการชำระเงินได้" });
+  }
+});
+
+
+// 🎉 2. ด่านรับสายตอนจ่ายเงินสำเร็จ -> อัปเดตข้อมูลผู้ใช้ใน DB
+app.get("/api/payment-success", async (req, res) => {
+  const { userId } = req.query;
+
+  if (!userId) return res.status(400).send("ไม่พบข้อมูลผู้ใช้");
+
+  try {
+    // 🗄️ ยิง SQL ไปเปลี่ยนสถานะผู้ใช้ในตารางเป็นพรีเมียม!
+    // (แก้ชื่อตาราง/ตัวแปรคิวรี่ db ให้ตรงตามโครงสร้างของโปรเจกต์พี่นะครับ)
+    await db.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
+
+    // พออัปเดตเบสเสร็จ ให้ดีดผู้ใช้กลับไปที่หน้าแรกของหน้าบ้านเราพร้อมส่งตัวแปรบอกว่าสำเร็จ
+    // (แก้ URL หน้าบ้านด้านล่างนี้ให้ตรงกับหน้าเว็บพี่นะ)
+    res.redirect("http://localhost:5173/?payment=success"); 
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("เกิดข้อผิดพลาดในการอัปเดตสิทธิ์พรีเมียม");
+  }
+});
+
+// ❌ 3. ด่านรับสายตอนลูกค้ายกเลิกการจ่ายเงิน
+app.get("/api/payment-cancel", (req, res) => {
+  res.redirect("http://localhost:5173/?payment=cancel");
+});
+
+
 
 // ==========================================
 // AUTH ROUTES (Register & Login)
