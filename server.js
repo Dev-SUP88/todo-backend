@@ -8,7 +8,6 @@ const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_KEY);
 
 const googleAuth = require('google-auth-library');
-
 const client = new googleAuth.OAuth2Client('929898429344-17ufedipqrcsbe0io5t807t32p3usqbr.apps.googleusercontent.com');
 
 const app = express();
@@ -21,10 +20,8 @@ const pool = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT // <-- ต้องมีบรรทัดนี้ ไม่งั้นพอร์ต 443 ที่เราตั้งไว้ใน Render จะไม่มีประโยชน์เลย!
+    port: process.env.DB_PORT
 });
-
-
 
 // 2. Middleware ตรวจสอบความปลอดภัย (JWT Authentication)
 const authenticateToken = (req, res, next) => {
@@ -35,40 +32,37 @@ const authenticateToken = (req, res, next) => {
 
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ message: 'Invalid or Expired Token' });
-        req.user = user; // ส่งข้อมูล user (id, username) ไปยัง endpoint ถัดไป
-      console.log(req.user);
+        req.user = user;
         next();
     });
 };
 
-// 💳 1. API สำหรับสร้างหน้าต่างชำระเงิน Stripe ฿38
-app.post("/api/create-checkout-session", async (req, res) => {
+// 💳 1. API สำหรับสร้างหน้าต่างชำระเงิน Stripe ฿38 (🌟 ซ่อม: ใส่ authenticateToken เรียบร้อย)
+app.post("/api/create-checkout-session", authenticateToken, async (req, res) => {
   try {
-    // แกะ userId จาก token (สมมติว่าพี่มีระบบแกะ req.user.id จาก middleware ล็อกอินอยู่แล้ว)
     const userId = req.user ? req.user.id : null; 
+    if (!userId) return res.status(401).json({ error: "ไม่พบข้อมูลผู้ใช้" });
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card", "promptpay"], // 🇹🇭 เปิดรับทั้งบัตรเครดิตและ PromptPay QR ของไทย!
+      payment_method_types: ["card", "promptpay"],
       line_items: [
         {
           price_data: {
-            currency: "thb", // บังคับสกุลเงินบาท
+            currency: "thb",
             product_data: {
               name: "Todo List Premium 💎",
               description: "ปลดล็อกฟีเจอร์ปรับแต่งสีสันรายการ Todo ได้ตามใจชอบตลอดชีพ",
             },
-            unit_amount: 3800, // ฿38.00 (หน่วยของ Stripe เป็นสตางค์ เลยต้องคูณ 100 ครับ)
+            unit_amount: 3800,
           },
           quantity: 1,
         },
       ],
       mode: "payment",
-      // หน้าเว็บที่จะให้ Stripe เด้งกลับไปหาหลังจากจ่ายตังค์สำเร็จ/ยกเลิก
       success_url: `https://todo-backend-sk7n.onrender.com/api/payment-success?userId=${userId}`, 
       cancel_url: `https://todo-backend-sk7n.onrender.com/api/payment-cancel`,
     });
 
-    // ส่งลิงก์ชำระเงินกลับไปให้หน้าบ้านเปิด
     res.json({ url: session.url });
   } catch (err) {
     console.error("Stripe error:", err);
@@ -80,16 +74,13 @@ app.post("/api/create-checkout-session", async (req, res) => {
 // 🎉 2. ด่านรับสายตอนจ่ายเงินสำเร็จ -> อัปเดตข้อมูลผู้ใช้ใน DB
 app.get("/api/payment-success", async (req, res) => {
   const { userId } = req.query;
-
   if (!userId) return res.status(400).send("ไม่พบข้อมูลผู้ใช้");
 
   try {
-    // 🗄️ ยิง SQL ไปเปลี่ยนสถานะผู้ใช้ในตารางเป็นพรีเมียม!
-    // (แก้ชื่อตาราง/ตัวแปรคิวรี่ db ให้ตรงตามโครงสร้างของโปรเจกต์พี่นะครับ)
+    // อัปเดตสิทธิ์ในฐานข้อมูล
     await pool.query("UPDATE users SET is_premium = 1 WHERE id = ?", [userId]);
 
-    // พออัปเดตเบสเสร็จ ให้ดีดผู้ใช้กลับไปที่หน้าแรกของหน้าบ้านเราพร้อมส่งตัวแปรบอกว่าสำเร็จ
-    // (แก้ URL หน้าบ้านด้านล่างนี้ให้ตรงกับหน้าเว็บพี่นะ)
+    // 📌 ตรงนี้ต้องเปลี่ยนจาก localhost เป็น URL หน้าบ้านตัวจริงของพี่เวลาอัปขึ้นโฮสต์จริงนะครับ!
     res.redirect("http://localhost:5173/?payment=success"); 
   } catch (err) {
     console.error(err);
@@ -99,83 +90,71 @@ app.get("/api/payment-success", async (req, res) => {
 
 // ❌ 3. ด่านรับสายตอนลูกค้ายกเลิกการจ่ายเงิน
 app.get("/api/payment-cancel", (req, res) => {
+  // 📌 ตรงนี้ด้วยเช่นกันครับ เปลี่ยนเป็น URL หน้าบ้านตัวจริง
   res.redirect("http://localhost:5173/?payment=cancel");
 });
 
 
-
 // ==========================================
-// AUTH ROUTES (Register & Login)
+// AUTH ROUTES
 // ==========================================
 
 app.post('/api/google-login', async (req, res) => {
-    const { token } = req.body; // 1. หน้าบ้านยิง Token ที่ได้จาก Google มาให้ที่นี่
-
+    const { token } = req.body;
     try {
-        // 2. ส่ง Token ไปให้ Google ตรวจสอบความถูกต้อง
         const ticket = await client.verifyIdToken({
             idToken: token,
             audience: '929898429344-17ufedipqrcsbe0io5t807t32p3usqbr.apps.googleusercontent.com'
         });
         const payload = ticket.getPayload(); 
-        const { email, name } = payload; // ดึงอีเมลและชื่อจริงจาก Google
+        const { email, name } = payload;
 
-        // 3. เช็คในฐานข้อมูล MySQL ของเราว่าเคยมีอีเมลนี้ไหม
         const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-
         let user = users[0];
 
         if (!user) {
-            // 🌟 เคสที่ 1: ยังไม่มีอีเมลนี้ในระบบ (สมัครสมาชิกใหม่สด ๆ)
-            // ใช้ชื่อจาก Google ตั้งเป็น username ไปก่อน ส่วน password ปล่อยเป็น NULL
+            // สมัครสมาชิกใหม่ (🌟 เสริมข้อมูลเบื้องต้น คลีนรหัสผ่าน)
             const [result] = await pool.query(
-                'INSERT INTO users (username, email, password) VALUES (?, ?, NULL)',
+                'INSERT INTO users (username, email, password, is_premium) VALUES (?, ?, NULL, 0)',
                 [name, email]
             );
-            
-            // ดึงข้อมูลยูสเซอร์ที่เพิ่งสร้างขึ้นมา
             const [newUser] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
             user = newUser[0];
         }
 
-        // 🌟 เคสที่ 2: มีอีเมลนี้อยู่แล้ว (หรือสร้างเสร็จจากเคสด้านบนแล้ว)
-        // 4. สร้าง JWT Token ของแอปเราเอง เพื่อให้หน้าบ้านเอาไว้ใช้ล็อกอินในหน้าถัด ๆ ไป
-        // (ถ้าระบบเดิมนายใช้ Session หรือไม่ได้ใช้ JWT สามารถตัดท่อน sign นี้ออกแล้วส่ง user กลับไปตรง ๆ ได้เลยครับ)
+        // ฝังตัวแปรเพิ่มใน JWT Token
         const mySystemToken = jwt.sign(
-            { id: user.id, username: user.username, email: user.email },
-            process.env.JWT_SECRET || 'SECRET_KEY_ของนาย',
+            { id: user.id, username: user.username, email: user.email, is_premium: user.is_premium },
+            process.env.JWT_SECRET || 'SECRET_KEY',
             { expiresIn: '1d' }
         );
 
-        // 5. ส่งข้อมูลกลับไปบอกหน้าบ้านว่า "ผ่านด่านแล้วจ้า!"
+        // 🌟 ส่งเฉพาะข้อมูลจำเป็น และพ่นสถานะพรีเมียมกลับไปด้วยเพื่อให้หน้าบ้านรับรู้ทันที
         res.json({
             message: "Google Login Successful!",
             token: mySystemToken,
             user: {
                 id: user.id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                is_premium: user.is_premium // 👈 เพิ่มตัวนี้เพื่อให้หน้าบ้านดึงไปใช้ได้เลย
             }
         });
-
     } catch (error) {
         console.error("Google Auth Error:", error);
         res.status(400).json({ error: "Invalid Google Token" });
     }
 });
 
-// สมัครสมาชิก (ความปลอดภัย: Hash รหัสผ่านด้วย bcrypt)
-// แก้ไขโค้ดใน server.js ตรงส่วน Register ให้เป็นแบบนี้:
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ message: 'Please fill all fields' });
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        await pool.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword]);
+        await pool.query('INSERT INTO users (username, password, is_premium) VALUES (?, ?, 0)', [username, hashedPassword]);
         res.status(201).json({ message: 'User registered successfully' });
     } catch (error) {
-        // เปลี่ยนมาเช็คผ่าน message หรือ code ให้ครอบคลุม
         if (error.code === 'ER_DUP_ENTRY' || (error.message && error.message.includes('Duplicate entry'))) {
             return res.status(400).json({ message: 'Username already exists' });
         }
@@ -183,8 +162,6 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-
-// เข้าสู่ระบบ (สร้าง JWT Token)
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -195,19 +172,23 @@ app.post('/api/login', async (req, res) => {
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(400).json({ message: 'Invalid password' });
 
-        // สร้าง Token (หมดอายุใน 1 วัน)
-        const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, message: 'Logged in successfully' });
+        // ฝังตัวแปรพรีเมียมลงในก้อน Token ด้วย
+        const token = jwt.sign({ id: user.id, username: user.username, is_premium: user.is_premium }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        
+        res.json({ 
+            token, 
+            message: 'Logged in successfully',
+            is_premium: user.is_premium // 👈 ส่งกลับไปบอกหน้าบ้านตรงๆ
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // ==========================================
-// TODO ROUTES (ต้องมี Token ถึงจะเข้าถึงได้)
+// TODO ROUTES 
 // ==========================================
 
-// ดึงข้อมูล Todo ทั้งหมด "เฉพาะของตัวเอง"
 app.get('/api/todos', authenticateToken, async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM todos WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
@@ -217,35 +198,34 @@ app.get('/api/todos', authenticateToken, async (req, res) => {
     }
 });
 
-// เพิ่ม Todo ใหม่
 app.post('/api/todos', authenticateToken, async (req, res) => {
     const { title } = req.body;
     if (!title) return res.status(400).json({ message: 'Title is required' });
 
     try {
-        const [result] = await pool.query('INSERT INTO todos (user_id, title) VALUES (?, ?)', [req.user.id, title]);
-        res.status(201).json({ id: result.insertId, title, is_completed: 0 });
+        // 🌟 ตั้งค่าเริ่มต้นตอนสร้างงานให้บันทึกรหัสสีขาว (#ffffff) ลงไปด้วยตามโครงสร้างตารางใหม่
+        const [result] = await pool.query('INSERT INTO todos (user_id, title, color_code) VALUES (?, ?, "#ffffff")', [req.user.id, title]);
+        res.status(201).json({ id: result.insertId, title, is_completed: 0, color_code: "#ffffff" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// แก้ไขเนื้อหา หรือ ติ๊กสถานะทำแล้ว/ยังไม่ได้ทำ (ความปลอดภัย: เช็ค user_id เสมอ)
 app.put('/api/todos/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { title, is_completed } = req.body; // ส่งมาเฉพาะตัวที่จะแก้ก็ได้
+    const { title, is_completed, color_code } = req.body; // 🎨 รองรับการส่ง color_code เข้ามาเปลี่ยนสี
 
     try {
-        // ดึงข้อมูลเดิมมาดูก่อนเพื่ออัปเดตแบบ Dynamic
         const [rows] = await pool.query('SELECT * FROM todos WHERE id = ? AND user_id = ?', [id, req.user.id]);
         if (rows.length === 0) return res.status(404).json({ message: 'Todo not found or unauthorized' });
 
         const currentTodo = rows[0];
         const newTitle = title !== undefined ? title : currentTodo.title;
         const newStatus = is_completed !== undefined ? is_completed : currentTodo.is_completed;
+        const newColor = color_code !== undefined ? color_code : currentTodo.color_code; // เช็คเรื่องสี
 
-        await pool.query('UPDATE todos SET title = ?, is_completed = ? WHERE id = ? AND user_id = ?', 
-            [newTitle, newStatus, id, req.user.id]);
+        await pool.query('UPDATE todos SET title = ?, is_completed = ?, color_code = ? WHERE id = ? AND user_id = ?', 
+            [newTitle, newStatus, newColor, id, req.user.id]);
 
         res.json({ message: 'Todo updated successfully' });
     } catch (error) {
@@ -253,21 +233,16 @@ app.put('/api/todos/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// ลบ Todo (ความปลอดภัย: ลบได้เฉพาะของตัวเองเท่านั้น)
 app.delete('/api/todos/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         const [result] = await pool.query('DELETE FROM todos WHERE id = ? AND user_id = ?', [id, req.user.id]);
-        
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Todo not found or unauthorized' });
-        }
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Todo not found or unauthorized' });
         res.json({ message: 'Todo deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
